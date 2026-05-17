@@ -35,6 +35,8 @@ load(
     "HaskellToolchainLibraryInfo",
     "all_package_ids",
 )
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 
 HaskellReplLoadInfo = provider(
     doc = """Haskell REPL target information.
@@ -1228,3 +1230,4 @@ information.
         ],
         **kwargs
     )
+

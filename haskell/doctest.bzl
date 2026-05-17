@@ -16,6 +16,7 @@ load(
 )
 load(":cc.bzl", "cc_interop_info", "ghc_cc_program_args")
 load(":private/context.bzl", "haskell_context", "render_env")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 def _doctest_toolchain_impl(ctx):
     return platform_common.ToolchainInfo(
@@ -219,3 +220,4 @@ you should specify location of the executable using the `doctest` attribute
 of `haskell_doctest_toolchain`.
 """,
 )
+

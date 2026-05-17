@@ -54,6 +54,8 @@ load(
     "HaskellLibraryInfo",
     "HaskellToolchainLibraryInfo",
 )
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 
 # Note [Empty Libraries]
 #
@@ -946,3 +948,4 @@ def _get_mix_filepath(coverage_datum):
     """ Extracts mix file path from a coverage datum.
     """
     return coverage_datum.mix_file.short_path
+

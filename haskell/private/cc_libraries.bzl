@@ -28,6 +28,8 @@ load(
     "HaskellInfo",
     "HaskellProtobufInfo",
 )
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 
 def get_cc_libraries(cc_libraries_info, libraries_to_link):
     """Return only the C libraries out of a list of `LibraryToLink`.
@@ -486,3 +488,4 @@ def merge_cc_shared_library_infos(owner, cc_shared_library_infos):
             libraries = depset(libraries_to_link),
         ),
     )
+

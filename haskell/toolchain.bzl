@@ -40,6 +40,7 @@ load(
     "HaskellInfo",
     "HaskellLibraryInfo",
 )
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 _GHC_BINARIES = ["ghc", "ghc-pkg", "hsc2hs", "haddock", "runghc", "hpc"]
 
@@ -800,3 +801,4 @@ get_cc_toolchain = rule(
         ),
     },
 )
+

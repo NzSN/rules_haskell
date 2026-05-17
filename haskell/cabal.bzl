@@ -42,6 +42,7 @@ load(
     "HaskellLibraryInfo",
     "all_dependencies_package_ids",
 )
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 def _get_auth(ctx, urls):
     """Find the .netrc file and obtain the auth dict for the required URLs.
@@ -3245,3 +3246,4 @@ def use_stack(stack):
         name = "rules_haskell_stack",
         stack = stack,
     )
+

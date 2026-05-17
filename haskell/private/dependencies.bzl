@@ -5,6 +5,7 @@ load(
     "HaskellLibraryInfo",
 )
 load(":private/set.bzl", "set")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 def gather_dep_info(name, deps):
     """Collapse dependencies into a single `HaskellInfo`.
@@ -136,3 +137,4 @@ def gather_dep_info(name, deps):
             )
 
     return acc
+

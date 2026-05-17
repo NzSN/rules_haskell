@@ -15,6 +15,8 @@ load(
     "HaskellInfo",
 )
 load(":private/cc_libraries.bzl", "deps_HaskellCcLibrariesInfo", "get_cc_libraries")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 
 CcInteropInfo = provider(
     doc = "Information needed for interop with cc rules.",
@@ -242,3 +244,4 @@ def _transitive_libraries_from_attr(ctx, attr_name):
     ]
     linker_inputs = cc_common.merge_cc_infos(cc_infos = cc_infos).linking_context.linker_inputs.to_list() + [info.linker_input for info in cc_shared_library_infos]
     return [lib for li in linker_inputs for lib in li.libraries]
+

@@ -19,6 +19,9 @@ load(
     "HaskellLibraryInfo",
     "HaskellProtobufInfo",
 )
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 
 def _capitalize_first_letter(c):
     """Capitalize the first letter of the input. Unlike the built-in
@@ -485,3 +488,4 @@ def haskell_proto_toolchain(
             "@platforms//cpu:arm64",
         ],
     )
+

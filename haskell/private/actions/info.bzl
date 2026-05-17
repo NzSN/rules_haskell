@@ -2,6 +2,7 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load(":private/cc_libraries.bzl", "get_ghci_library_files")
+load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 
 def write_proto_file(hs, output_name, proto_type, content):
     """Write an encoded .proto file.
@@ -172,3 +173,4 @@ def compile_info_output_groups(
             runfiles = runfiles,
         )]),
     }
+

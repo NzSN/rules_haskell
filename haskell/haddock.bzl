@@ -15,6 +15,7 @@ load(
     "HaskellInfo",
     "HaskellLibraryInfo",
 )
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 def generate_unified_haddock_info(this_package_id, this_package_haddock, this_package_html, deps):
     """Collapse dependencies into a single `HaddockInfo`.
@@ -359,3 +360,4 @@ linking.
 [haddock]: http://haskell-haddock.readthedocs.io/en/latest/
 """,
 )
+
