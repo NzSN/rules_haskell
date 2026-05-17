@@ -301,6 +301,20 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
     if deps_package_db:
         path_args.append("--package-db={}".format(deps_package_db))
 
+    # GHC 9.14+ ships with newer core libraries (base 4.22, ghc-prim 0.13, etc.)
+    # that exceed upper bounds in many Hackage packages. Relax them.
+    cabal_files = glob(os.path.join(srcdir, "*.cabal"))
+    for cabal_file in cabal_files:
+        with open(cabal_file, "r") as f:
+            content = f.read()
+        # Relax common restrictive upper bounds for GHC 9.14 compatibility
+        import re as _re
+        content = _re.sub(r"base\s*<[^,]*?\d", "base < 5", content)
+        content = _re.sub(r"ghc-prim\s*<[^,]*?\d", "ghc-prim < 1", content)
+        content = _re.sub(r"ghc-bignum\s*<[^,]*?\d", "ghc-bignum < 2", content)
+        with open(cabal_file, "w") as f:
+            f.write(content)
+
     run([runghc] + runghc_args + [setup, "configure", \
         component, \
         "--verbose=0", \
