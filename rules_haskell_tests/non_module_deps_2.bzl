@@ -24,6 +24,10 @@ _empty_repo = repository_rule(
 )
 
 def repositories(*, bzlmod):  # @unused
+    # GHC >= 9.14 does not have a Stackage LTS snapshot yet, so we use
+    # unpinned snapshots for these versions.
+    pinned_snapshot = not (GHC_VERSION and is_at_least("9.14", GHC_VERSION))
+
     # In a separate repo because not all platforms support zlib.
     stack_snapshot(
         name = "stackage-zlib",
@@ -36,7 +40,7 @@ def repositories(*, bzlmod):  # @unused
         packages = ["zlib"],
         stack_snapshot_json = ("//:stackage-zlib-snapshot{}.json".format(
             "_" + str(GHC_VERSION) if GHC_VERSION else "",
-        )) if not is_windows else None,
+        )) if (pinned_snapshot and not is_windows) else None,
         label_builder = label_builder,
     )
 
@@ -97,7 +101,7 @@ def repositories(*, bzlmod):  # @unused
         },
         stack_snapshot_json = ("//:ghcide-snapshot{}.json".format(
             "_" + str(GHC_VERSION) if GHC_VERSION else "",
-        )) if not is_windows else None,
+        )) if (pinned_snapshot and not is_windows) else None,
         vendored_packages = {
             "ghc-paths": "@rules_haskell//tools/ghc-paths",
         },
@@ -209,7 +213,7 @@ haskell_cabal_library(
         },
         stack_snapshot_json = ("//:stackage-pinning-test_snapshot{}.json".format(
             "_" + str(GHC_VERSION) if GHC_VERSION else "",
-        )) if not is_windows else None,
+        )) if (pinned_snapshot and not is_windows) else None,
         label_builder = label_builder,
     )
 

@@ -230,7 +230,7 @@ stack_snapshot(
     },
     stack_snapshot_json = "//:stackage_snapshot{}.json".format(
         "_" + str(GHC_VERSION) if GHC_VERSION else "",
-    ) if not is_windows else None,
+    ) if not is_windows and not (GHC_VERSION and is_at_least("9.14", GHC_VERSION)) else None,
     vendored_packages = {
         "ghc-paths": "@rules_haskell//tools/ghc-paths",
     },
