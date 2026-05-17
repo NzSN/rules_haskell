@@ -13,6 +13,8 @@ snapshot to use.
 load("@bazel_skylib//lib:new_sets.bzl", "sets")
 load("@os_info//:os_info.bzl", "cpu_value", "is_darwin", "is_linux", "is_windows")
 load("@rules_haskell//haskell:cabal.bzl", _stack_snapshot = "stack_snapshot")
+load("@rules_haskell//haskell:private/versions.bzl", "is_at_least")
+load("@rules_haskell_ghc_version//:ghc_version.bzl", "GHC_VERSION")
 
 _snapshot_tag = tag_class(
     doc = "The stack snapshot to use.",
@@ -240,6 +242,22 @@ def _assert_no_root_tags(module):
     if module.tags.haddock:
         fail(msg.format(module_name = module.name, module_version = module.version, tag = "haddock"))
 
+def _versioned_label(label, suffix):
+    """Transform a label to include a version suffix before the file extension.
+    E.g., `//:stackage_snapshot.yaml` + `_9.14.1` -> `//:stackage_snapshot_9.14.1.yaml`.
+    """
+    name = label.name
+    # Split on the last dot to preserve the file extension.
+    if "." in name:
+        base, ext = name.rsplit(".", 1)
+        versioned_name = "{}{}.{}".format(base, suffix, ext)
+    else:
+        versioned_name = "{}{}".format(name, suffix)
+    # Construct a label in the same package. For same-repo labels and
+    # self-referencing cross-repo labels (e.g. @rules_haskell// in
+    # rules_haskell's own MODULE.bazel), this resolves correctly.
+    return Label("//{}:{}".format(label.package, versioned_name))
+
 def _stack_snapshot_impl(mctx):
     root_module = None
     rules_haskell_modules = []
@@ -258,7 +276,13 @@ def _stack_snapshot_impl(mctx):
                 snapshot_tag = module.tags.snapshot[0]
                 if "snapshot" not in kwargs and "local_snapshot" not in kwargs:
                     if snapshot_tag.local_snapshot:
-                        kwargs["local_snapshot"] = snapshot_tag.local_snapshot
+                        if GHC_VERSION:
+                            kwargs["local_snapshot"] = _versioned_label(
+                                snapshot_tag.local_snapshot,
+                                "_{}".format(GHC_VERSION),
+                            )
+                        else:
+                            kwargs["local_snapshot"] = snapshot_tag.local_snapshot
                     if snapshot_tag.name:
                         kwargs["snapshot"] = snapshot_tag.name
         else:
@@ -277,7 +301,16 @@ def _stack_snapshot_impl(mctx):
                         cpu_value in os_list,
                     ])
                 ):
-                    kwargs["stack_snapshot_json"] = stack_snapshot_json_tag.label
+                    # For GHC >= 9.14, there is no Stackage LTS snapshot yet,
+                    # so we must not use a pinned stack_snapshot_json.
+                    if not (GHC_VERSION and is_at_least("9.14", GHC_VERSION)):
+                        if GHC_VERSION:
+                            kwargs["stack_snapshot_json"] = _versioned_label(
+                                stack_snapshot_json_tag.label,
+                                "_{}".format(GHC_VERSION),
+                            )
+                        else:
+                            kwargs["stack_snapshot_json"] = stack_snapshot_json_tag.label
                     break
 
             if module.tags.verbose:

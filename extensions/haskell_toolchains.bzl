@@ -1,12 +1,20 @@
 """ Module extension to install bindist haskell toolchains"""
 
 load(
+    "@rules_haskell//haskell:ghc.bzl",
+    "DEFAULT_GHC_VERSION",
+)
+load(
     "@rules_haskell//haskell:ghc_bindist.bzl",
     "bindist_info_for_version",
     "ghc_bindist",
     "ghc_bindist_toolchain_declaration",
     "ghc_bindists_toolchain_declarations",
     "haskell_register_ghc_bindists",
+)
+load(
+    "@rules_haskell_ghc_version//:ghc_version.bzl",
+    "GHC_VERSION",
 )
 
 _bindists_tag = tag_class(
@@ -163,12 +171,15 @@ def _haskell_toolchains_impl(mctx):
             found_bindists = True
             bindists_tag = module.tags.bindists[0]
 
-            targets = bindist_info_for_version(mctx, bindists_tag.version).keys()
+            # Use GHC_VERSION from environment if no explicit version is set.
+            version = bindists_tag.version or GHC_VERSION or DEFAULT_GHC_VERSION
+
+            targets = bindist_info_for_version(mctx, version).keys()
 
             haskell_register_ghc_bindists(
                 dist = bindists_tag.dist,
                 variant = bindists_tag.variant,
-                version = bindists_tag.version,
+                version = version,
                 ghcopts = bindists_tag.ghcopts,
                 haddock_flags = bindists_tag.haddock_flags,
                 repl_ghci_args = bindists_tag.repl_ghci_args,
@@ -178,7 +189,7 @@ def _haskell_toolchains_impl(mctx):
                 targets = targets,
             )
             toolchain_declarations.extend(
-                ghc_bindists_toolchain_declarations(mctx, bindists_tag.version),
+                ghc_bindists_toolchain_declarations(mctx, version),
             )
 
     all_toolchains(

@@ -166,16 +166,6 @@ jobs:
           - 9.10.3
           - 9.14.1
         exclude:
-          # TODO: in a MODULE.bazel file we declare version specific dependencies, would need to use stack snapshot json
-          #       and stack config per GHC version
-          - ghc: 9.8.2
-            bzlmod: true
-          - ghc: 9.6.5
-            bzlmod: true
-          - ghc: 9.10.3
-            bzlmod: true
-          - ghc: 9.14.1
-            bzlmod: true
           # currently proto-lens-protoc (read: protoc-gen-haskell) fails with an access violation on Windows
           - ghc: 9.6.5
             os: windows-2022
