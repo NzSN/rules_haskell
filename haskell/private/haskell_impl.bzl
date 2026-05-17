@@ -375,10 +375,9 @@ def _haskell_binary_common_impl(ctx, is_test):
         mix_runfiles = [datum.mix_file for datum in coverage_data]
         srcs_runfiles = [_condition_coverage_src(hs, datum.src_file) for datum in coverage_data]
         extra_runfiles = [
-            ctx.file._bash_runfiles,
             hs.toolchain.tools.hpc,
             binary,
-        ] + mix_runfiles + srcs_runfiles + java.inputs.to_list()
+        ] + mix_runfiles + srcs_runfiles + java.inputs.to_list() + ctx.attr._bash_runfiles[DefaultInfo].files.to_list()
 
     return [
         hs_info,

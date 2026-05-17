@@ -165,8 +165,7 @@ def _mk_binary_rule(**kwargs):
                 default = Label("@rules_haskell//haskell:private/coverage_wrapper.sh.tpl"),
             ),
             "_bash_runfiles": attr.label(
-                allow_single_file = True,
-                default = Label("@bazel_tools//tools/bash/runfiles:runfiles"),
+                default = Label("@bazel_tools//tools/bash/runfiles"),
             ),
         })
 
