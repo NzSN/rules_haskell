@@ -316,9 +316,17 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
         # GHC 9.14 ships with newer versions of core libraries that exceed
         # upper bounds specified by many Hackage packages.
         # Strip version constraints but avoid matching conditionals
-        # (if impl(ghc >=X)) and OR constraints (|| >=X).
+        # (if impl(ghc >=X)).
+        # First pass: strip version bounds from the first dependency
+        # on the field-name line (e.g. "Build-Depends: base >= 4.9 && < 4.20").
         content = _re.sub(
-            r"^(\s*,?\s*)([a-z][a-z0-9-]*)\s+[><=][^,\n|]*",
+            r"^(\s*[a-zA-Z][a-zA-Z0-9-]*:\s*)([a-z][a-z0-9-]*)\s+[><=][^,\n]*(?:\s*\|\|\s*[><=][^,\n]*)*",
+            r"\1\2",
+            content,
+            flags=_re.MULTILINE,
+        )
+        content = _re.sub(
+            r"^(\s*,?\s*)([a-z][a-z0-9-]*)\s+[><=][^,\n]*(?:\s*\|\|\s*[><=][^,\n]*)*",
             r"\1\2",
             content,
             flags=_re.MULTILINE,
