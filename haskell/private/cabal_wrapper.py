@@ -323,11 +323,12 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
             content,
             flags=_re.MULTILINE,
         )
-        # Write to a writable temp location (pkgroot is writable)
-        patched_cabal = os.path.join(pkgroot, os.path.basename(cabal_file))
+        # Write patched cabal back to srcdir so relative paths (include-dirs,
+        # hs-source-dirs, c-sources, etc.) resolve relative to the .cabal file.
+        patched_cabal = cabal_file + ".patched"
         with open(patched_cabal, "w") as f:
             f.write(content)
-        extra_cabal_args = ["--cabal-file=" + patched_cabal]
+        extra_cabal_args = ["--cabal-file=" + os.path.basename(patched_cabal)]
 
     run([runghc] + runghc_args + [setup, "configure", \
         component, \

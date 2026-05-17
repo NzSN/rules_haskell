@@ -1667,10 +1667,10 @@ library
             # For "pkg-name-1.2.3-HASH", this strips HASH -> "pkg-name-1.2.3",
             #     then another chop strips version -> "pkg-name".
             # For "pkg-name-1.2.3" (no hash), one chop strips version -> "pkg-name".
-            # Heuristic: if the last component (after last hyphen) has no dots
-            # and is short, it's a hash. After stripping hash, chop version.
+            # Heuristic: if the last component (after last hyphen) has no dots,
+            # it's a hash (short or long SHA256). After stripping hash, chop version.
             last_part = dep.rpartition("-")[2]
-            if last_part and "." not in last_part and len(last_part) <= 8:
+            if last_part and "." not in last_part:
                 # Looks like a hash. Strip it, then strip version.
                 dep = dep.rpartition("-")[0]
                 dep_name = _chop_version(dep)
