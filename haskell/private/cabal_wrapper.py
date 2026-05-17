@@ -312,9 +312,12 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
         with open(cabal_file, "r") as f:
             content = f.read()
         import re as _re
-        content = _re.sub(r"base\s*<[^,]*?\d", "base < 5", content)
-        content = _re.sub(r"ghc-prim\s*<[^,]*?\d", "ghc-prim < 1", content)
-        content = _re.sub(r"ghc-bignum\s*<[^,]*?\d", "ghc-bignum < 2", content)
+        # Relax restrictive upper bounds for GHC 9.14 compatibility.
+        # Common format:  base >=4.3 && <4.20
+        # Replace entire version constraint with a generous bound.
+        content = _re.sub(r"base\s+[^,]*", "base < 5", content)
+        content = _re.sub(r"ghc-prim\s+[^,]*", "ghc-prim < 1", content)
+        content = _re.sub(r"ghc-bignum\s+[^,]*", "ghc-bignum < 2", content)
         # Write to a writable temp location (pkgroot is writable)
         patched_cabal = os.path.join(pkgroot, os.path.basename(cabal_file))
         with open(patched_cabal, "w") as f:
