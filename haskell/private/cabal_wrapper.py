@@ -318,6 +318,7 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
         content = _re.sub(r"base[ \t]+[^\n,]*", "base < 5", content)
         content = _re.sub(r"ghc-prim[ \t]+[^\n,]*", "ghc-prim < 1", content)
         content = _re.sub(r"ghc-bignum[ \t]+[^\n,]*", "ghc-bignum < 2", content)
+        content = _re.sub(r"template-haskell[ \t]+[^\n,]*", "template-haskell < 3", content)
         # Write to a writable temp location (pkgroot is writable)
         patched_cabal = os.path.join(pkgroot, os.path.basename(cabal_file))
         with open(patched_cabal, "w") as f:
