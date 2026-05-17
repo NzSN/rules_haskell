@@ -92,6 +92,43 @@ A collection of example rules is in [./examples](./examples).
 
 [tutorial]: https://rules-haskell.readthedocs.io/en/latest/
 
+## Dependency Resolution
+
+`rules_haskell` resolves Hackage package dependencies using the
+[`stack_snapshot`][stack_snapshot] rule. By default it invokes
+[Stack][stack] with a Stackage LTS snapshot to compute the transitive
+dependency graph.
+
+### Cabal-install fallback for new GHC versions
+
+When a GHC version has no corresponding Stackage LTS snapshot yet
+(e.g. GHC 9.14.1), `rules_haskell` automatically falls back to
+using [cabal-install][cabal] for dependency resolution. The fallback
+is triggered when the snapshot file uses a compiler resolver
+(`resolver: ghc-X.Y.Z`) instead of a Stackage LTS.
+
+To use this fallback you need **`cabal-install`** and the matching
+**GHC version** available on `$PATH`. For example, with
+[ghcup][ghcup]:
+
+```console
+$ ghcup install ghc 9.14.1
+$ ghcup install cabal
+$ export GHC_VERSION=9.14.1
+$ bazel build //...
+```
+
+The cabal-install solver resolves packages directly from the
+[Hackage][hackage] index, without requiring a Stackage LTS snapshot.
+The resolved dependency graph is deterministic for the same
+`cabal-install` and Hackage index versions.
+
+[stack_snapshot]: https://api.haskell.build/haskell/cabal.html#stack_snapshot
+[stack]: https://docs.haskellstack.org/
+[cabal]: https://www.haskell.org/cabal/
+[ghcup]: https://www.haskell.org/ghcup/
+[hackage]: https://hackage.haskell.org/
+
 ## Rules
 
 See https://api.haskell.build for the reference documentation on provided

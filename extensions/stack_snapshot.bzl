@@ -208,6 +208,11 @@ def _add_packages(conf, module, root_or_rules_haskell):
             # easier to understand.
             if package_tag.setup_deps:
                 conf.setup_deps[package_name] = package_tag.setup_deps
+                # Track packages whose setup_deps are exclusively @Cabal//:Cabal.
+                # These are only needed for GHC < 9.6; for GHC >= 9.6,
+                # Cabal is bundled and these setup deps are unnecessary.
+                if all([str(d) == "@Cabal//:Cabal" for d in package_tag.setup_deps]):
+                    sets.insert(conf.cabal_only_setup_dep_packages, package_name)
             if package_tag.flags:
                 conf.flags[package_name] = package_tag.flags
             if package_tag.vendored:
@@ -340,6 +345,7 @@ def _stack_snapshot_impl(mctx):
         configured_packages = sets.make(),
         packages = sets.make(),  # "packages" argument of stack_snapshot, must not contain hidden and vendored packages.
         setup_deps = {},
+        cabal_only_setup_dep_packages = sets.make(),  # Packages whose only setup_deps are @Cabal//:Cabal
         flags = {},
         extra_deps = {},
         components = {},
@@ -365,6 +371,17 @@ def _stack_snapshot_impl(mctx):
         package: [str(label) for label in labels]
         for package, labels in packages_conf.setup_deps.items()
     }
+
+    # For GHC >= 9.6, Cabal is bundled with GHC, so setup_deps that only
+    # reference @Cabal//:Cabal are unnecessary. Filter them out.
+    if GHC_VERSION and is_at_least("9.6", GHC_VERSION):
+        cabal_only_packages = sets.to_list(packages_conf.cabal_only_setup_dep_packages)
+        kwargs["setup_deps"] = {
+            pkg: deps
+            for pkg, deps in kwargs["setup_deps"].items()
+            if pkg not in cabal_only_packages
+        }
+
     kwargs["flags"] = packages_conf.flags
     kwargs["components"] = packages_conf.components
     kwargs["components_dependencies"] = packages_conf.components_dependencies

@@ -333,12 +333,27 @@ stack_snapshot_dev.package(
         setup_deps = ["@Cabal//:Cabal"],
     )
     for package in [
+        "proto-lens-runtime",
+    ]
+]
+
+# Setup-only packages that are only needed for compiling Setup.hs
+# with GHC < 9.6. They are resolved transitively through their
+# dependents. Marking them hidden avoids requesting them from the
+# resolver when GHC >= 9.6 or when using unpinned snapshots
+# (e.g. GHC 9.14.1) where they may not be resolvable.
+[
+    stack_snapshot_dev.package(
+        name = package,
+        hidden = True,
+        setup_deps = ["@Cabal//:Cabal"],
+    )
+    for package in [
         "HUnit",
         "bifunctors",
         "call-stack",
         "generic-deriving",
         "mono-traversable",
-        "proto-lens-runtime",
         "quickcheck-io",
         "transformers-compat",
         "type-errors",

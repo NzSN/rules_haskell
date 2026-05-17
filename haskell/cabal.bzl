@@ -1466,6 +1466,304 @@ version: 0.0.0.0
     # Sort the items to make sure that generated outputs are deterministic.
     return {name: resolved[name] for name in sorted(resolved.keys())}
 
+def _resolve_packages_cabal(
+        repository_ctx,
+        snapshot,
+        versioned_packages,
+        unversioned_packages,
+        vendored_packages):
+    """Use cabal-install to determine package versions and dependencies.
+
+    This is an alternative to _resolve_packages for cases where Stack's
+    resolver (e.g. ghc-9.14.1) does not include a full Stackage LTS and
+    therefore cannot resolve Hackage packages with --global-hints.
+
+    Returns the same format as _resolve_packages.
+    """
+
+    # Find cabal-install.
+    cabal = repository_ctx.which("cabal")
+    if not cabal:
+        fail("cabal-install not found on PATH. It is required for resolving packages when the snapshot uses a compiler resolver (e.g. ghc-9.14.1) instead of a Stackage LTS.")
+
+    # Create a dummy package depending on all requested packages.
+    resolve_package = "rules-haskell-cabal-resolve"
+
+    # Parse the snapshot file to find pre-pinned packages (e.g. happy-1.20.1.1).
+    # These are typically build tools that don't expose libraries.
+    # We exclude them from the dummy library's build-depends and instead
+    # add them as constraints in cabal.project.
+    snapshot_package_names = []
+    if type(snapshot) == "path":
+        snapshot_content = repository_ctx.read(snapshot)
+        in_packages = False
+        for line in snapshot_content.splitlines():
+            stripped = line.strip()
+            if stripped == "packages:":
+                in_packages = True
+                continue
+            if in_packages and stripped.startswith("- "):
+                pkg_spec = stripped[2:].strip()
+                if pkg_spec and not pkg_spec.startswith("#"):
+                    snapshot_package_names.append(_chop_version(pkg_spec))
+            elif in_packages and stripped and not stripped.startswith("-") and not stripped.startswith("#"):
+                in_packages = False
+
+    all_unversioned = unversioned_packages + vendored_packages.keys()
+
+    # Known packages that only provide executables (build tools), not libraries.
+    # They cannot be listed in build-depends of a library/executable.
+    # These are resolved separately via tools/direct download.
+    _CABAL_EXECUTABLE_ONLY = ["alex", "happy", "c2hs", "doctest"]
+
+    # Build dependency list for the dummy package, excluding pre-pinned
+    # snapshot packages and executable-only packages.
+    build_depends_list = [
+        pkg for pkg in all_unversioned
+        if pkg not in snapshot_package_names and pkg not in _CABAL_EXECUTABLE_ONLY
+    ] + [
+        _chop_version(pkg) for pkg in versioned_packages
+        if _chop_version(pkg) not in snapshot_package_names and _chop_version(pkg) not in _CABAL_EXECUTABLE_ONLY
+    ]
+    build_depends = ",\n    ".join(build_depends_list)
+
+    repository_ctx.file(
+        "{name}/{name}.cabal".format(name = resolve_package),
+        executable = False,
+        content = """\
+cabal-version: 2.2
+name: {name}
+version: 1.0
+
+library
+  build-depends:
+    {packages}
+  default-language: GHC2024
+""".format(
+            name = resolve_package,
+            packages = build_depends,
+        ),
+    )
+
+    # Create cabal.project.
+    # Vendored packages are listed as local packages.
+    vendored_paths = [
+        truly_relativize(
+            str(repository_ctx.path(label.relative(name + ".cabal")).dirname),
+            relative_to = str(repository_ctx.path("cabal.project").dirname),
+        )
+        for (name, label) in vendored_packages.items()
+    ]
+
+    # Build constraints for versioned packages and pre-pinned snapshot packages.
+    constraints_lines = [
+        "  {} =={}".format(_chop_version(pkg), _version(pkg))
+        for pkg in versioned_packages
+    ]
+    # Also add snapshot pre-pinned packages as constraints.
+    for pkg_spec in snapshot_package_names:
+        if pkg_spec not in [_chop_version(p) for p in versioned_packages]:
+            # snapshot_package_names only has unversioned names, need to re-parse
+            pass
+    # Re-parse snapshot for versioned pre-pinned packages
+    if type(snapshot) == "path":
+        in_packages = False
+        for line in repository_ctx.read(snapshot).splitlines():
+            stripped = line.strip()
+            if stripped == "packages:":
+                in_packages = True
+                continue
+            if in_packages and stripped.startswith("- "):
+                pkg_spec = stripped[2:].strip()
+                if pkg_spec and not pkg_spec.startswith("#") and _has_version(pkg_spec):
+                    constraints_lines.append(
+                        "  {} =={}".format(_chop_version(pkg_spec), _version(pkg_spec)),
+                    )
+            elif in_packages and stripped and not stripped.startswith("-") and not stripped.startswith("#"):
+                in_packages = False
+
+    # Build flag constraints from repository_ctx.attr.flags.
+    flags = repository_ctx.attr.flags
+    for pkg_name, pkg_flags in flags.items():
+        for flag in pkg_flags:
+            if flag.startswith("+"):
+                constraints_lines.append("  {} +{}".format(pkg_name, flag[1:]))
+            elif flag.startswith("-"):
+                constraints_lines.append("  {} -{}".format(pkg_name, flag[1:]))
+            else:
+                constraints_lines.append("  {} +{}".format(pkg_name, flag))
+
+    cabal_project_content = "\n".join([
+        "packages: {}".format(" ".join([resolve_package] + vendored_paths)),
+    ] + (["constraints:"] + constraints_lines if constraints_lines else []))
+
+    repository_ctx.file(
+        "cabal.project",
+        content = cabal_project_content,
+        executable = False,
+    )
+
+    # Run cabal to resolve dependencies.
+    # Use --project-file to point to our generated cabal.project.
+    # Use --dry-run to avoid building (we just need the plan).
+    # Determine GHC version from the snapshot: path is like .../stackage_snapshot_9.14.1.yaml
+    # or the resolver in the file is "ghc-9.14.1". Extract the version.
+    snapshot_path = str(snapshot)
+    ghc_version = None
+    for part in snapshot_path.replace(".yaml", "").split("_"):
+        if part[0].isdigit():
+            ghc_version = part
+            break
+    if not ghc_version:
+        fail("Could not determine GHC version from snapshot path: {}".format(snapshot_path))
+
+    cabal_args = [
+        cabal,
+        "build",
+        "all",
+        "--dry-run",
+        "--project-file=cabal.project",
+        "--with-compiler=ghc-{}".format(ghc_version),
+        # For new GHC versions, some packages have not yet been updated
+        # to declare compatibility with newer dependencies. Allow
+        # relaxing upper bounds so dependency resolution can succeed.
+        "--allow-newer",
+    ]
+    exec_result = _execute_or_fail_loudly(repository_ctx, cabal_args)
+
+    # Parse the plan.json generated by cabal.
+    plan_path = "dist-newstyle/cache/plan.json"
+    if not repository_ctx.path(plan_path).exists:
+        fail("cabal did not generate {}. Output:\n{}".format(plan_path, exec_result.stderr))
+
+    plan = json.decode(repository_ctx.read(plan_path))
+
+    # Build the resolved packages dict in the same format as _resolve_packages.
+    resolved = {}
+    versioned_packages_names = {_chop_version(p): _version(p) for p in versioned_packages}
+
+    for pkg in plan.get("install-plan", []):
+        pkg_name = pkg["pkg-name"]
+        pkg_version = pkg["pkg-version"]
+
+        # Skip the dummy resolve package.
+        if pkg_name == resolve_package:
+            continue
+
+        # Skip duplicate entries (cabal sometimes lists the same package
+        # multiple times for different components).
+        if pkg_name in resolved:
+            continue
+
+        # Parse dependencies: strip version and hash suffix from each dep.
+        # Cabal plan.json format: "pkgname-X.Y.Z-HASH" where HASH is a
+        # short hex digest (e.g. "fde1", "6a2d"). We need just the name.
+        deps = []
+        for dep in pkg.get("depends", []):
+            # _chop_version removes the component after the LAST hyphen.
+            # For "pkg-1.2.3-HASH", this strips the HASH, leaving "pkg-1.2.3".
+            # For "pkg-1.2.3" (no hash), this strips "1.2.3", leaving "pkg".
+            # For "pkg-name-1.2.3-HASH", this strips HASH -> "pkg-name-1.2.3",
+            #     then another chop strips version -> "pkg-name".
+            # For "pkg-name-1.2.3" (no hash), one chop strips version -> "pkg-name".
+            # Heuristic: if the last component (after last hyphen) has no dots
+            # and is short, it's a hash. After stripping hash, chop version.
+            last_part = dep.rpartition("-")[2]
+            if last_part and "." not in last_part and len(last_part) <= 8:
+                # Looks like a hash. Strip it, then strip version.
+                dep = dep.rpartition("-")[0]
+                dep_name = _chop_version(dep)
+            else:
+                # No hash, just strip version.
+                dep_name = _chop_version(dep)
+            deps.append(dep_name)
+
+        # Determine location.
+        pkg_type = pkg.get("type")
+        pkg_src = pkg.get("pkg-src")
+
+        if pkg_type == "pre-existing":
+            # Core GHC package.
+            location = {"type": "core"}
+            if pkg_name in versioned_packages_names:
+                fail("{} is a core package, built into GHC. Its version is determined entirely by the version of GHC you are using. You cannot pin it to {}.".format(pkg_name, versioned_packages_names[pkg_name]))
+        elif pkg_src != None and type(pkg_src) == "dict":
+            src_type = pkg_src.get("type")
+            if src_type == "repo-tar":
+                # Hackage package.
+                repo_uri = pkg_src.get("repo", {}).get("uri", "http://hackage.haskell.org/")
+                repo_uri = repo_uri.rstrip("/")
+                location = {
+                    "type": "hackage",
+                    "url": "{repo}/package/{name}-{version}/{name}-{version}.tar.gz".format(
+                        repo = repo_uri,
+                        name = pkg_name,
+                        version = pkg_version,
+                    ),
+                }
+                # cabal provides sha256 directly (unlike stack).
+                sha256 = pkg.get("pkg-src-sha256")
+                if sha256:
+                    location["sha256"] = sha256
+            elif src_type == "local":
+                location = {"type": "vendored"}
+            elif src_type == "git":
+                location = {
+                    "type": "git",
+                    "url": pkg_src.get("url", ""),
+                    "commit": pkg_src.get("commit", ""),
+                    "subdir": pkg_src.get("subdir", ""),
+                }
+            else:
+                fail("Unexpected cabal source type '{}' for package {}.".format(src_type, pkg_name))
+        else:
+            fail("Cannot determine location for package {} (type={}, src={}).".format(pkg_name, pkg_type, pkg_src))
+
+        resolved[pkg_name] = {
+            "name": pkg_name,
+            "version": pkg_version,
+            "dependencies": deps,
+            "location": location,
+        }
+
+    # Add executable-only packages that were excluded from cabal resolution.
+    # These packages (alex, happy, c2hs, doctest) only provide executables
+    # and cannot be listed as library dependencies. We add them to resolved
+    # with their hackage location so the downstream pipeline can handle them.
+    for pkg_name in snapshot_package_names + _CABAL_EXECUTABLE_ONLY:
+        if pkg_name and pkg_name not in resolved:
+            # Look up the version from versioned_packages or from the
+            # snapshot package list.
+            pkg_version = None
+            for vp in versioned_packages:
+                if _chop_version(vp) == pkg_name:
+                    pkg_version = _version(vp)
+                    break
+            if not pkg_version:
+                # Try to find version from snapshot pre-pinned packages.
+                snapshot_content2 = repository_ctx.read(snapshot)
+                for line in snapshot_content2.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("- ") and _chop_version(stripped[2:].strip()) == pkg_name:
+                        pkg_version = _version(stripped[2:].strip())
+                        break
+            if pkg_version:
+                resolved[pkg_name] = {
+                    "name": pkg_name,
+                    "version": pkg_version,
+                    "dependencies": [],
+                    "location": {
+                        "type": "hackage",
+                        "url": "https://hackage.haskell.org/package/{name}-{version}/{name}-{version}.tar.gz".format(
+                            name = pkg_name,
+                            version = pkg_version,
+                        ),
+                    },
+                }
+
+    # Sort to ensure deterministic output.
+    return {name: resolved[name] for name in sorted(resolved.keys())}
+
 def _pin_packages(repository_ctx, resolved):
     """Pin resolved packages.
 
@@ -1701,6 +1999,24 @@ def _label_to_string(label):
         return str(label)
     else:
         return "@{}//{}:{}".format(label.workspace_name, label.package, label.name)
+
+def _is_compiler_resolver(repository_ctx, snapshot):
+    """Check if the snapshot uses a compiler resolver (ghc-X.Y.Z) rather than a Stackage LTS/nightly.
+
+    Compiler resolvers only include GHC's core packages and cannot resolve
+    Hackage packages with Stack's `--global-hints`. For these resolvers we
+    must use cabal-install instead of Stack for dependency resolution.
+    """
+    if type(snapshot) == "path":
+        content = repository_ctx.read(snapshot)
+        # Look for "resolver: ghc-..." in the snapshot file (yaml format).
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("resolver:"):
+                resolver_value = line[len("resolver:"):].strip()
+                return resolver_value.startswith("ghc-")
+    return False
+    return False
 
 def _parse_stack_snapshot(repository_ctx, snapshot, local_snapshot):
     if snapshot and local_snapshot:
@@ -2018,16 +2334,32 @@ def _stack_snapshot_impl(repository_ctx):
 
     # Resolve and fetch packages
     if repository_ctx.attr.stack_snapshot_json == None:
-        # Enforce dependency on stack_update
-        repository_ctx.read(repository_ctx.path(Label(repository_ctx.attr.stack_update)))
-        resolved = _resolve_packages(
-            repository_ctx,
-            snapshot,
-            packages.versioned,
-            packages.unversioned,
-            vendored_packages,
-        )
-        _download_packages_unpinned(repository_ctx, snapshot, resolved)
+        if _is_compiler_resolver(repository_ctx, snapshot):
+            # Compiler resolvers (e.g. ghc-9.14.1) do not include a Stackage
+            # LTS package set. Stack's --global-hints cannot find Hackage
+            # packages for these resolvers. Use cabal-install instead.
+            resolved = _resolve_packages_cabal(
+                repository_ctx,
+                snapshot,
+                packages.versioned,
+                packages.unversioned,
+                vendored_packages,
+            )
+            # For cabal-resolved packages, download directly.
+            # stack unpack would also work for Hackage packages, but we avoid
+            # the stack dependency entirely.
+            _download_packages_unpinned(repository_ctx, snapshot, resolved)
+        else:
+            # Enforce dependency on stack_update
+            repository_ctx.read(repository_ctx.path(Label(repository_ctx.attr.stack_update)))
+            resolved = _resolve_packages(
+                repository_ctx,
+                snapshot,
+                packages.versioned,
+                packages.unversioned,
+                vendored_packages,
+            )
+            _download_packages_unpinned(repository_ctx, snapshot, resolved)
     else:
         pinned = _read_snapshot_json(repository_ctx, repository_ctx.attr.stack_snapshot_json)
         _download_packages(repository_ctx, snapshot, pinned)
@@ -2057,10 +2389,20 @@ def _stack_snapshot_impl(repository_ctx):
                 visibility = ["//visibility:private"]
         visibilities[name] = visibility
 
+    # Packages that only provide executables (not libraries). When using
+    # cabal resolution they may not appear in the resolved set but still
+    # have components configured.
+    _CABAL_EXECUTABLE_ONLY = ["alex", "happy", "c2hs", "doctest"]
+
     user_components = {
         name: _parse_components(name, components, resolved[name])
         for (name, components) in repository_ctx.attr.components.items()
+        if name in resolved
     }
+    # For executable-only packages, use default components.
+    for (name, components) in repository_ctx.attr.components.items():
+        if name not in resolved and name in _CABAL_EXECUTABLE_ONLY:
+            user_components[name] = components
     all_components = {}
     user_components_args = {
         _parse_components_args_key(component): args
@@ -2098,11 +2440,12 @@ packages = {
                 deps = [
                     "@{}//:{}".format(repository_ctx.attr.unmangled_repo_name, dep)
                     for dep in spec["dependencies"]
-                    if all_components[dep].lib
+                    if dep in all_components and all_components[dep].lib
                 ],
                 tools = [
                     str(Label("@{}-exe//{}:{}".format(repository_ctx.attr.unmangled_repo_name, dep, exe)))
                     for dep in spec["dependencies"]
+                    if dep in all_components
                     for exe in all_components[dep].exe
                 ],
                 flags = repository_ctx.attr.flags.get(name, []),
@@ -2154,7 +2497,7 @@ haskell_toolchain_library(name = "{name}", visibility = {visibility})
             library_deps = [
                 dep
                 for dep in spec["dependencies"]
-                if all_components[dep].lib
+                if dep in all_components and all_components[dep].lib
             ] + [
                 _label_to_string(label)
                 for label in extra_deps.get(name, [])
@@ -2169,6 +2512,7 @@ haskell_toolchain_library(name = "{name}", visibility = {visibility})
             library_tools = [
                 "_%s_exe_%s" % (dep, exe)
                 for dep in spec["dependencies"]
+                if dep in all_components
                 for exe in all_components[dep].exe
             ] + tools
 
