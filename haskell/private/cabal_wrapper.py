@@ -302,18 +302,24 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
         path_args.append("--package-db={}".format(deps_package_db))
 
     # GHC 9.14+ ships with newer core libraries (base 4.22, ghc-prim 0.13, etc.)
-    # that exceed upper bounds in many Hackage packages. Relax them.
+    # that exceed upper bounds in many Hackage packages. The sandbox source
+    # tree is read-only, so we copy the .cabal to a temp file, relax bounds,
+    # and point Setup.hs configure at the modified copy via --cabal-file=.
     cabal_files = glob(os.path.join(srcdir, "*.cabal"))
-    for cabal_file in cabal_files:
+    extra_cabal_args = []
+    if cabal_files:
+        cabal_file = cabal_files[0]
         with open(cabal_file, "r") as f:
             content = f.read()
-        # Relax common restrictive upper bounds for GHC 9.14 compatibility
         import re as _re
         content = _re.sub(r"base\s*<[^,]*?\d", "base < 5", content)
         content = _re.sub(r"ghc-prim\s*<[^,]*?\d", "ghc-prim < 1", content)
         content = _re.sub(r"ghc-bignum\s*<[^,]*?\d", "ghc-bignum < 2", content)
-        with open(cabal_file, "w") as f:
+        # Write to a writable temp location (pkgroot is writable)
+        patched_cabal = os.path.join(pkgroot, os.path.basename(cabal_file))
+        with open(patched_cabal, "w") as f:
             f.write(content)
+        extra_cabal_args = ["--cabal-file=" + patched_cabal]
 
     run([runghc] + runghc_args + [setup, "configure", \
         component, \
@@ -328,6 +334,7 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
         "--with-strip=" + strip,
         "--enable-deterministic", \
         ] +
+        extra_cabal_args + \
         [ "--ghc-option=" + flag.replace("$CC", cc).replace("$LD", ld) for flag in toolchain_info["ghc_cc_args"] ] +
         [ "--hsc2hs-option=-c" + cc,
           "--hsc2hs-option=-l" + cc,
