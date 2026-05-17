@@ -313,12 +313,28 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
             content = f.read()
         import re as _re
         # Relax restrictive upper bounds for GHC 9.14 compatibility.
-        # Common format:  base >=4.3 && <4.20
-        # Replace entire version constraint with a generous bound.
-        content = _re.sub(r"base[ \t]+[^\n,]*", "base < 5", content)
-        content = _re.sub(r"ghc-prim[ \t]+[^\n,]*", "ghc-prim < 1", content)
-        content = _re.sub(r"ghc-bignum[ \t]+[^\n,]*", "ghc-bignum < 2", content)
-        content = _re.sub(r"template-haskell[ \t]+[^\n,]*", "template-haskell < 3", content)
+        # GHC 9.14 ships with newer versions of core libraries that exceed
+        # upper bounds specified by many Hackage packages.
+        relax = {
+            "base": "5",
+            "ghc-prim": "1",
+            "ghc-bignum": "2",
+            "template-haskell": "3",
+            "containers": "1",
+            "deepseq": "2",
+            "bytestring": "1",
+            "text": "3",
+            "array": "1",
+            "directory": "2",
+            "process": "2",
+            "time": "2",
+            "transformers": "1",
+            "mtl": "3",
+            "filepath": "2",
+            "unix": "3",
+        }
+        for pkg, ver in relax.items():
+            content = _re.sub(rf"{pkg}[ \t]+[^\n,]*", f"{pkg} < {ver}", content)
         # Write to a writable temp location (pkgroot is writable)
         patched_cabal = os.path.join(pkgroot, os.path.basename(cabal_file))
         with open(patched_cabal, "w") as f:
