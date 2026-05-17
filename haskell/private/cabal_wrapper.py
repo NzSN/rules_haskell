@@ -315,8 +315,14 @@ with mkdtemp(distdir_prefix()) as distdir, init_deps_db() as deps_package_db:
         # Relax restrictive upper bounds for GHC 9.14 compatibility.
         # GHC 9.14 ships with newer versions of core libraries that exceed
         # upper bounds specified by many Hackage packages.
-        # Simply strip all version constraints from dependency lines.
-        content = _re.sub(r"(\S+)\s+[><=][^,\n]*", r"\1", content)
+        # Strip version constraints but avoid matching conditionals
+        # (if impl(ghc >=X)) and OR constraints (|| >=X).
+        content = _re.sub(
+            r"^(\s*,?\s*)([a-z][a-z0-9-]*)\s+[><=][^,\n|]*",
+            r"\1\2",
+            content,
+            flags=_re.MULTILINE,
+        )
         # Write to a writable temp location (pkgroot is writable)
         patched_cabal = os.path.join(pkgroot, os.path.basename(cabal_file))
         with open(patched_cabal, "w") as f:
