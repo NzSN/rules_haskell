@@ -43,6 +43,7 @@ load(
     "all_dependencies_package_ids",
 )
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 
 def _get_auth(ctx, urls):
     """Find the .netrc file and obtain the auth dict for the required URLs.

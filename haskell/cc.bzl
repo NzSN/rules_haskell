@@ -17,6 +17,7 @@ load(
 load(":private/cc_libraries.bzl", "deps_HaskellCcLibrariesInfo", "get_cc_libraries")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 
 CcInteropInfo = provider(
     doc = "Information needed for interop with cc rules.",

@@ -56,6 +56,7 @@ load(
 )
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 
 # Note [Empty Libraries]
 #

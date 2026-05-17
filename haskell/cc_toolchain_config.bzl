@@ -2,6 +2,8 @@ load(
     "@rules_cc//cc:action_names.bzl",
     "ACTION_NAMES",
 )
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc:defs.bzl", "CcToolchainConfigInfo")
 load(
     "@rules_cc//cc:cc_toolchain_config_lib.bzl",
     "artifact_name_pattern",
