@@ -1,0 +1,305 @@
+# `rules_haskell` Architecture
+
+This documents the internal architecture of `rules_haskell` — a Bazel ruleset for
+building Haskell code. It is intended for contributors and maintainers.
+
+## Workspace Layout
+
+Three Bazel workspaces form the repository:
+
+| Workspace              | Purpose                                    |
+|------------------------|--------------------------------------------|
+| `/` (root)             | Core rule definitions and implementation   |
+| `rules_haskell_tests/` | Comprehensive test suite (115+ test dirs)  |
+| `rules_haskell_nix/`   | Nixpkgs integration and examples           |
+
+## Layered Architecture
+
+```
+┌─────────────────────────────────────┐
+│  Public API (haskell/defs.bzl)      │
+│  haskell_library, haskell_binary,   │ ← macros/attrs users call
+│  haskell_test, haskell_import,      │
+│  haskell_repl, haskell_doc          │
+├─────────────────────────────────────┤
+│  Implementation                     │
+│  haskell/private/haskell_impl.bzl   │ ← core logic per rule type
+│  _haskell_binary_common_impl,       │
+│  haskell_library_impl, etc.         │
+├─────────────────────────────────────┤
+│  Context                            │
+│  haskell/private/context.bzl        │ ← unified config access
+│  HaskellContext: toolchain, env,    │
+│  paths, flags, src_root             │
+├─────────────────────────────────────┤
+│  Support Libraries (private/)       │
+│  dependencies.bzl - dep graph merge │ ← helper modules
+│  packages.bzl     - package exposure│
+│  plugins.bzl      - compiler plugins│
+│  pkg_id.bzl       - package IDs     │
+│  expansions.bzl   - make variables  │
+├─────────────────────────────────────┤
+│  Actions (private/actions/)         │
+│  compile.bzl      - GHC invocation  │ ← actual Bazel actions
+│  link.bzl         - linking         │
+│  package.bzl      - ghc-pkg recache │
+│  info.bzl         - IDE output groups│
+│  process_hsc.bzl  - hsc2hs          │
+│  runghc.bzl       - runghc scripts  │
+├─────────────────────────────────────┤
+│  Providers (providers.bzl)          │
+│  HaskellInfo, HaskellLibraryInfo,   │ ← info passed between rules
+│  HaddockInfo, HaskellCoverageInfo,  │
+│  etc. (12 total providers)          │
+├─────────────────────────────────────┤
+│  Toolchain (toolchain.bzl)          │
+│  GHC location, flags, locale,       │ ← platform-specific GHC
+│  global pkg-db, all tool binaries   │
+└─────────────────────────────────────┘
+```
+
+## Entry Points
+
+### `haskell/defs.bzl` — Public API
+
+Defines `_haskell_common_attrs` (shared attributes: `srcs`, `deps`, `ghcopts`,
+`plugins`, etc.) and exposes the following public macros and rules:
+
+| Name                        | Purpose                                      |
+|-----------------------------|----------------------------------------------|
+| `haskell_library()`         | Build a Haskell library                      |
+| `haskell_binary()`          | Build a Haskell executable                   |
+| `haskell_test()`            | Build and run a Haskell test (with coverage) |
+| `haskell_import`            | Import a prebuilt GHC package                |
+| `haskell_toolchain_library` | Import a toolchain-supplied library          |
+| `haskell_doc()`             | Generate Haddock documentation               |
+| `haskell_repl()`            | Create GHCi REPL targets                     |
+| `ghc_plugin()`              | Register a GHC compiler plugin               |
+| `haskell_runfiles()`        | Runfiles-aware library wrapper               |
+
+Every `haskell_library`, `haskell_binary`, and `haskell_test` macro
+auto-generates a `@repl` target for interactive use.
+
+### `haskell/providers.bzl` — Inter-rule Communication
+
+| Provider                     | Content                                                       |
+|------------------------------|---------------------------------------------------------------|
+| `HaskellInfo`                | `package_databases`, `source_files`, `module_names`, `hs_libraries`, `interface_dirs`, `compile_flags`, per-module interface/object tracking |
+| `HaskellLibraryInfo`         | `package_id`, `version`, `exports` (list of reexported pkg IDs) |
+| `HaskellCabalArgsInfo`       | Cabal settings: `is_empty`, `ignore_setup`, `static_binary`, `with_haddock` |
+| `HaskellToolchainLibraryInfo`| Marker for toolchain-imported libraries                       |
+| `HaskellCoverageInfo`        | Code coverage data                                            |
+| `HaddockInfo`                | `package_id`, `transitive_html`, `transitive_haddocks`        |
+| `HaskellLintInfo`            | Linter output files                                           |
+| `HaskellProtobufInfo`        | Protobuf-generated library info                               |
+| `C2hsLibraryInfo`            | c2hs interface file and import dir                            |
+| `GhcPluginInfo`              | Plugin module, deps, args, and tools                          |
+| `HaskellCcLibrariesInfo`     | Maps C library keys to `HaskellCcLibraryInfo`                 |
+| `HaskellCcLibraryInfo`       | Mangled static library links, `is_haskell` flag               |
+
+## Implementation
+
+### `haskell/private/haskell_impl.bzl` — Core Logic
+
+Contains the implementation functions for every rule type:
+
+- `haskell_library_impl` — compile modules, create package database via `ghc-pkg recache`
+- `haskell_binary_impl` / `haskell_test_impl` — thin wrappers around `_haskell_binary_common_impl`
+- `haskell_import_impl` — re-expose a prebuilt GHC package as a Bazel target
+- `haskell_toolchain_library_impl` — import a toolchain-provided library
+
+Key architectural note: **Empty Libraries** — fictitious packages without real
+library files are used for module-level compilation to avoid cascading
+rebuilds when only one module changes.
+
+### `haskell/private/context.bzl` — HaskellContext
+
+Creates the central `HaskellContext` struct/provder that carries:
+- Toolchain reference (`@rules_haskell//haskell:toolchain`)
+- Source root (workspace root + package + strip prefix)
+- Environment variables (`LANG`, `RULES_HASKELL_GHC_PATH`, etc.)
+- Coverage, worker, and compilation mode flags
+
+### `haskell/private/dependencies.bzl` — Dependency Graph Merge
+
+`gather_dep_info()` collapses all transitive `HaskellInfo` providers into a
+single merged struct — the central dependency resolution point:
+- Merges `package_databases`, `hs_libraries`, `interface_dirs`, `source_files`, `boot_files`
+- Computes `package_ids` from `HaskellLibraryInfo` exports
+
+## Actions (`haskell/private/actions/`)
+
+| File                | Purpose                                       |
+|---------------------|-----------------------------------------------|
+| `compile.bzl`       | GHC compilation (binary and library modes); handles `.hsc` preprocessing |
+| `link.bzl`          | Linking executables and shared/static libraries |
+| `package.bzl`       | Creates GHC package databases via `ghc-pkg recache` |
+| `info.bzl`          | Output groups with interface files, objects, and package caches for IDE tooling |
+| `process_hsc_file.bzl` | Run `hsc2hs` to convert `.hsc` files to `.hs` |
+| `runghc.bzl`        | Generate runghc wrapper scripts with package exposure flags |
+
+## Toolchain (`haskell/toolchain.bzl`)
+
+Defines the `_haskell_toolchain` rule. The toolchain implementation:
+
+1. Looks up `GHC_BINARIES` (`ghc`, `ghc-pkg`, `hsc2hs`, `haddock`, `runghc`, `hpc`)
+2. Infers `libdir_path` and `docdir_path`
+3. Dumps the global package database via `ghc-pkg dump --global`
+4. Builds a `ToolchainInfo` provider containing:
+
+| Field       | Content                                                  |
+|-------------|----------------------------------------------------------|
+| `tools`     | Paths to GHC, ghc-pkg, hsc2hs, haddock, runghc, hpc, ar |
+| `libraries` | Resolved toolchain library targets                       |
+| `actions`   | Struct binding `compile_binary`, `compile_library`, `link_binary`, `link_library_dynamic`, `link_library_static`, `package`, `run_ghc` |
+| `flags`     | GHC compiler flags                                       |
+| `locale`    | `LANG` and locale archive                                |
+| `is_darwin` / `cc_wrapper` etc. | Platform-specific info                        |
+| `version`   | GHC version                                              |
+| `global_pkg_db` | Path to the global package database dump             |
+| `protoc`    | Protocol buffer compiler (if configured)                 |
+
+### `_run_ghc()` — Central GHC Invocation
+
+The toolchain's `_run_ghc()` function is the central bottleneck for all GHC
+invocations. It handles:
+- Persistent worker mode vs. direct invocation
+- CC toolchain arguments (passes CC compiler flags to GHC)
+- ABI hash extraction
+- Locale setup (UTF-8 on macOS, fallback to `C.UTF-8`)
+- Output cleaning (GHC outputs to stdout/stderr interleaved with worker protocol)
+
+## Key Design Patterns
+
+### 1. Worker-based Compilation
+
+All rules delegate to a persistent GHC worker via `_haskell_worker_wrapper()`
+(`defs.bzl`). The toolchain multiplexes through `_run_ghc()` which can either
+maintain a persistent worker or run GHC directly. This amortizes GHC startup
+cost across many small compilation units.
+
+### 2. Aspect-driven Dependency Traversal
+
+Three aspects propagate through the dependency graph collecting information
+from transitive deps:
+
+| Aspect                          | Purpose                                    |
+|---------------------------------|--------------------------------------------|
+| `haskell_cc_libraries_aspect`   | Collect C/C++ library dependencies         |
+| `haskell_doc_aspect`            | Gather transitive haddock docs             |
+| `haskell_repl_aspect`           | Assemble REPL source files and packages    |
+
+Using aspects avoids repeated work in action functions since Bazel applies them
+once across the dep graph.
+
+### 3. Platform Abstraction (`haskell/platforms/list.bzl`)
+
+Maps diverse OS/arch name conventions onto canonical Bazel platform labels:
+
+```
+OS   → linux, osx (darwin), windows (mingw32), freebsd, ios, android
+ARCH → x86_64, aarch64, arm, x86_32, ppc
+```
+
+`declare_config_settings()` generates `config_setting` rules per OS/arch, and
+`platform_of_constraints()` combines them into strings like `"linux_x86_64"`.
+
+### 4. Stackage Integration (`haskell/cabal.bzl`, ~2900 lines)
+
+The `stack_snapshot()` repository rule converts Stackage snapshot YAML into
+Bazel targets. Features:
+- Per-GHC-version snapshot files (`stackage_snapshot_9.4.8.yaml`, etc.)
+- Vendored packages (e.g. custom `ghc-paths` replacement)
+- Custom setup dependencies
+- `--with-PROG=PATH` flag injection for `alex`, `c2hs`, `cpphs`, `doctest`, `happy`
+- `.netrc`-based authentication for private package downloads
+
+### 5. CC Interop (`haskell/cc.bzl`, `haskell/private/cc_libraries.bzl`)
+
+Bridges GHC's C compiler calling conventions with Bazel's CC toolchain:
+- The `haskell_cc_libraries_aspect` collects transitive CC library deps
+- `HaskellCcLibraryInfo` / `HaskellCcLibrariesInfo` providers carry the data
+- macOS workarounds: `-u symbol` flags to prevent `-dead_strip_dylibs` from
+  stripping indirectly-linked symbols (`link.bzl`)
+
+### 6. Cabal Library Support (`haskell/cabal.bzl`)
+
+Beyond `stack_snapshot`, the workspace-level Cabal integration:
+- `_prepare_cabal_inputs()` sets up the full dependency tree as input files
+- `_cabal_toolchain_info()` constructs a struct with paths to `ghc`, `ghc-pkg`,
+  `hsc2hs`, `ar`, `cc`, `ld`
+- Recognized Cabal configure flags are mapped to Bazel targets automatically
+
+### 7. Build Configuration Profiles (`.bazelrc.common`)
+
+| Config             | OS      | Toolchain Source  | Tag Filters                                    |
+|--------------------|---------|-------------------|------------------------------------------------|
+| `linux-nixpkgs`    | Linux   | Nixpkgs           | `-requires_nix`, `-dont_test_with_bindist`     |
+| `macos-nixpkgs`    | macOS   | Nixpkgs           |                                                 |
+| `linux-bindist`    | Linux   | GHC bindist       | `-requires_nix`, `-dont_test_with_bindist`     |
+| `macos-bindist`    | macOS   | GHC bindist       | `-dont_test_on_darwin`                         |
+| `windows-bindist`  | Windows | GHC bindist       | `-dont_test_on_windows`                        |
+| `ci`               | any     | var.              | remote cache, w/ `CI=true`                     |
+
+Coverage builds filter to `coverage-compatible` tagged tests only.
+
+## Provider Flow
+
+```
+haskell_library → haskell_library_impl
+  ├─ reads HaskellLibraryInfo + HaskellInfo from deps
+  ├─ compiler compiles → produces .hi/.o files
+  ├─ package.bzl creates package DB via ghc-pkg recache
+  └─ emits HaskellLibraryInfo (package_id, version, exports)
+       + HaskellInfo (source_files, package_databases, interface_dirs, ...)
+
+haskell_binary → haskell_binary_impl
+  ├─ merges all transitive dependency info
+  ├─ compile_binary → .o files
+  ├─ link_binary → executable
+  └─ emits HaskellBinaryInfo + runfiles
+
+haskell_import → haskell_import_impl
+  └─ wraps a prebuilt GHC package as a Bazel target
+```
+
+## Test Infrastructure
+
+Located in `rules_haskell_tests/tests/` (115+ test directories):
+
+| Category      | Examples                                              |
+|---------------|-------------------------------------------------------|
+| Binaries      | `binary-simple`, `binary-with-data`, `binary-dynamic` |
+| Libraries     | `library-empty`, `library-exports`, `library-with-cbits` |
+| Cabal         | `haskell_cabal_library`, `haskell_cabal_binary`, `cabal_binary_th` |
+| CC interop    | `cc_haskell_import`, `c-compiles`, `indirect-link`    |
+| Features      | `repl-*`, `haddock`, `hsc`, `c2hs`, `doctest`, `proto*` |
+| Platform      | `runfiles`, `encoding`, `lhs`, `data`                 |
+
+Common test utilities: `analysis_tests.bzl`, `rule_test_exe.bzl`,
+`test_haddock.bzl`, `RunTests.hs`, `Foo.hs`.
+
+## Asterius (Haskell-to-WebAssembly)
+
+Located in `haskell/asterius/`:
+- `asterius_config.bzl` — tool binary mapping
+- `asterius_dependencies.bzl` — WASM-specific dep resolution
+- `defs.bzl` — Asterius build rules (`ahc_link` etc.)
+- `extension.bzl` — module extension for bzlmod
+- `npm/` — Node.js package dependencies
+
+## Hash Imports
+
+Key modules imported across the codebase:
+
+| Module             | Provides                                                |
+|--------------------|---------------------------------------------------------|
+| `context.bzl`      | `HaskellContext`, `append_to_path()`                    |
+| `dependencies.bzl` | `gather_dep_info()`                                     |
+| `expansions.bzl`   | Make variable expansion helpers                         |
+| `plugins.bzl`      | GHC plugin resolution and flag generation               |
+| `version_macros.bzl` | Compile-time version macros for Cabal packages       |
+| `pkg_id.bzl`       | Package ID computation and parsing                      |
+| `packages.bzl`     | Package exposure flags and compile-time package config  |
+| `cc_libraries.bzl` | C/C++ library collection from deps                      |
+| `mode.bzl`         | Compilation mode utilities                              |
