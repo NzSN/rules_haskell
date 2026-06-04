@@ -11,7 +11,6 @@ load(
     ":private/pkgdb_to_bzl.bzl",
     "pkgdb_to_bzl",
 )
-load(":private/versions.bzl", "check_bazel_version")
 load(
     ":private/workspace_utils.bzl",
     "define_rule",
@@ -621,13 +620,11 @@ def haskell_register_ghc_bindists(
 def _configure_python3_toolchain_impl(repository_ctx):
     os_cpu = get_cpu_value(repository_ctx)
     python3_path = find_python(repository_ctx)
-    if check_bazel_version("4.2.0")[0]:
-        stub_shebang = """stub_shebang = "#!{python3_path}",""".format(
-            python3_path = python3_path,
-        )
-    else:
-        stub_shebang = ""
+    stub_shebang = """stub_shebang = "#!{python3_path}",""".format(
+        python3_path = python3_path,
+    )
     repository_ctx.file("BUILD.bazel", executable = False, content = """
+load("@rules_python//python:py_runtime.bzl", "py_runtime")
 load("@rules_python//python:py_runtime_pair.bzl", "py_runtime_pair")
 py_runtime(
     name = "python3_runtime",

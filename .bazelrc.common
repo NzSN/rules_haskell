@@ -14,10 +14,6 @@ common --config common
 # Taken from https://github.com/digital-asset/daml/pull/8697.
 startup --host_jvm_args=-Djdk.tls.client.protocols=TLSv1.2
 
-common --incompatible_require_linker_input_cc_api
-common --incompatible_disallow_empty_glob=true
-common --experimental_cc_shared_library
-
 # test environment does not propagate locales by default some tests reads files
 # written in UTF8, we need to propagate the correct environment variables, such
 # as LOCALE_ARCHIVE We also need to setup an utf8 locale
@@ -81,7 +77,6 @@ build:ci --remote_upload_local_results
 
 common:ci-common --color=no
 
-common:ci-common --nolegacy_important_outputs
 build:ci-common --loading_phase_threads=1
 build:ci-common --verbose_failures
 # Make sure we don't rely on the names of convenience symlinks because those
@@ -117,27 +112,10 @@ build:ci-windows-bindist-rules-haskell-tests --remote_default_exec_properties=ca
 
 # XXX: @com_google_protobuf sets `use_default_shell_env = True`, so we enable
 #   strict action env to avoid changes in `PATH` invalidating the cache.
-build:linux-bindist --experimental_strict_action_env
-build:macos-bindist --experimental_strict_action_env
-build:windows-bindist --experimental_strict_action_env
+#   --incompatible_strict_action_env became default in Bazel 9.
 
 # Note [backward compatible options]
-build:linux-bindist --incompatible_enable_cc_toolchain_resolution
-build:macos-bindist --incompatible_enable_cc_toolchain_resolution
-build:linux-nixpkgs --incompatible_enable_cc_toolchain_resolution
-build:macos-nixpkgs --incompatible_enable_cc_toolchain_resolution
-build:windows-bindist --incompatible_enable_cc_toolchain_resolution
-
-# Blocked by https://github.com/bazelbuild/bazel/issues/11704
-#build:ci --incompatible_load_cc_rules_from_bzl
-
-# This flag will become the default in a later version of bazel
-# See https://github.com/bazelbuild/bazel/issues/8922
-build:ci --incompatible_load_proto_rules_from_bzl
-
-# This flag will become the default in bazel 6
-# https://github.com/tweag/rules_haskell/issues/1657
-build: --incompatible_override_toolchain_transition
+# --incompatible_enable_cc_toolchain_resolution became default in Bazel 7, removed in Bazel 9.
 
 coverage --build_tag_filters "coverage-compatible" --test_tag_filters "coverage-compatible" --test_output=all
 
@@ -151,7 +129,3 @@ build:macos-nixpkgs --tool_java_language_version=11
 
 # Needed to run protoc compiled with libc++ / clang on Windows
 build:windows-bindist --proto_compiler @rules_haskell//tests:protoc.cmd
-
-# This flag will become the default in bazel 7
-# https://github.com/bazelbuild/bazel/issues/17032
-build --incompatible_disable_starlark_host_transitions

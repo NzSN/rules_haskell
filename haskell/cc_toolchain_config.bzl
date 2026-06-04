@@ -10,7 +10,7 @@ load(
     "flag_set",
     "tool_path",
 )
-
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 def _impl(ctx):
     tool_paths = [
         tool_path(
@@ -124,5 +124,4 @@ cc_toolchain_config = rule(
     attrs = {
         "is_clang": attr.bool(default = False, mandatory = False),
     },
-    provides = [CcToolchainConfigInfo],
 )

@@ -2,6 +2,7 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(
     ":private/cc_libraries.bzl",
     "get_ghci_library_files",

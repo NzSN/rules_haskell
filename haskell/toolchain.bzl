@@ -2,6 +2,8 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load(
     "//haskell/asterius:asterius_config.bzl",
     "ASTERIUS_BINARIES",
@@ -58,7 +60,7 @@ def _run_ghc(
         env,
         params_file = None,
         progress_message = None,
-        input_manifests = None,
+        extra_tools = [],
         interface_inputs = [],
         extra_name = "",
         hi_file = None,
@@ -141,18 +143,16 @@ def _run_ghc(
 
     inputs = depset(extra_inputs, transitive = [inputs])
 
-    if input_manifests != None:
-        input_manifests = input_manifests + cc.manifests
-    else:
-        input_manifests = cc.manifests
-
     tools.extend(hs.tools_config.tools_for_ghc)
+    tools.extend(extra_tools)
+
+    if hs.toolchain.cc_wrapper:
+        tools.append(hs.toolchain.cc_wrapper.executable)
     append_to_path(env, hs.toolchain.is_windows, hs.tools_config.path_for_run_ghc)
 
     hs.actions.run(
         inputs = inputs,
         tools = tools,
-        input_manifests = input_manifests,
         outputs = outputs,
         executable = hs.ghc_wrapper,
         mnemonic = mnemonic,
@@ -426,11 +426,11 @@ def _haskell_toolchain_impl(ctx):
         for lib in ctx.attr.libraries
     }
 
-    (cc_wrapper_inputs, cc_wrapper_manifest) = ctx.resolve_tools(tools = [ctx.attr._cc_wrapper])
     cc_wrapper_info = ctx.attr._cc_wrapper[DefaultInfo]
     cc_wrapper_runfiles = cc_wrapper_info.default_runfiles.merge(
         cc_wrapper_info.data_runfiles,
     )
+    cc_wrapper_inputs = cc_wrapper_runfiles.files
 
     if ctx.attr.asterius_binaries:
         tools_config = asterius_tools_config(
@@ -448,8 +448,6 @@ def _haskell_toolchain_impl(ctx):
             maybe_exec_cc_toolchain = default_tools_config.maybe_exec_cc_toolchain,
             supports_haddock = default_tools_config.supports_haddock,
         )
-
-    (protoc_inputs, protoc_input_manifests) = ctx.resolve_tools(tools = [ctx.attr._protoc])
 
     return [
         platform_common.ToolchainInfo(
@@ -469,7 +467,6 @@ def _haskell_toolchain_impl(ctx):
             cc_wrapper = struct(
                 executable = ctx.executable._cc_wrapper,
                 inputs = cc_wrapper_inputs,
-                manifests = cc_wrapper_manifest,
                 runfiles = cc_wrapper_runfiles,
             ),
             mode = ctx.var["COMPILATION_MODE"],
@@ -493,8 +490,6 @@ def _haskell_toolchain_impl(ctx):
             global_pkg_db = pkgdb_file,
             protoc = struct(
                 executable = ctx.executable._protoc,
-                inputs = protoc_inputs,
-                input_manifests = protoc_input_manifests,
             ),
             rule_info_proto = ctx.attr._rule_info_proto,
             tools_config = tools_config,

@@ -6,6 +6,9 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:sets.bzl", "sets")
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 
 # buildifier: disable=bzl-visibility
 load("//haskell/experimental/private:module.bzl", "build_haskell_modules", "get_module_path_from_target")
@@ -143,15 +146,13 @@ def _condition_coverage_src(hs, src):
 
 def _resolve_preprocessors(ctx, preprocessors):
     if not hasattr(ctx, "resolve_tools"):
-        # No resolve_tools when ctx is faked (see protobuf.bzl).
         return struct(
             inputs = depset(),
-            input_manifests = [],
+            tools = [],
         )
-    (inputs, input_manifests) = ctx.resolve_tools(tools = preprocessors)
     return struct(
-        inputs = inputs,
-        input_manifests = input_manifests,
+        inputs = depset(),
+        tools = preprocessors,
     )
 
 def haskell_module_from_target(m):

@@ -70,8 +70,6 @@ def _c2hs_library_impl(ctx):
         (version_macro_headers, version_macro_flags) = version_macro_includes(dep_info)
         args.add_all(["-C" + x for x in version_macro_flags])
 
-    (inputs, input_manifests) = ctx.resolve_tools(tools = [c2hs])
-
     hs.actions.run_shell(
         inputs = depset(transitive = [
             depset(cc.hdrs),
@@ -81,10 +79,8 @@ def _c2hs_library_impl(ctx):
             depset(hs.toolchain.bindir),
             depset(hs.toolchain.libdir),
             set.to_depset(version_macro_headers),
-            inputs,
         ]),
-        input_manifests = input_manifests,
-        tools = [hs.tools.ghc_pkg, c2hs_exe],
+        tools = [hs.tools.ghc_pkg, c2hs_exe, c2hs],
         outputs = [hs_file, chi_file],
         command =
             # cpp (called via c2hs) gets very unhappy if the mingw bin dir is

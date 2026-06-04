@@ -68,7 +68,10 @@ used to avoid command line length limitations.
 
 """
 
-from python.runfiles import runfiles as bazel_runfiles
+try:
+    from python.runfiles import runfiles as bazel_runfiles
+except ImportError:
+    bazel_runfiles = None
 from contextlib import contextmanager
 from collections import deque
 import glob
@@ -1017,6 +1020,10 @@ def find_cc():
     if os.path.isfile(CC):
         cc = CC
     else:
+        if bazel_runfiles is None:
+            sys.stderr.write("CC not found '{}' and no runfiles available.\n".format(CC))
+            sys.exit(1)
+
         # On macOS CC is a relative path to a wrapper script. If we're
         # being called from a GHCi REPL then we need to find this wrapper
         # script using Bazel runfiles.

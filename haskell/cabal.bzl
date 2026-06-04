@@ -5,6 +5,8 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:sets.bzl", "sets")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe", "read_netrc", "use_netrc")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(":cc.bzl", "cc_interop_info", "ghc_cc_program_args")
 load(":haddock.bzl", "generate_unified_haddock_info")
 load(":private/actions/info.bzl", "library_info_output_groups")
@@ -29,7 +31,6 @@ load(
     "truly_relativize",
 )
 load(":private/validate_attrs.bzl", "typecheck_stackage_extradeps")
-load(":private/versions.bzl", "check_bazel_version")
 load(
     ":private/workspace_utils.bzl",
     _execute_or_fail_loudly = "execute_or_fail_loudly",
@@ -180,7 +181,6 @@ def _prepare_cabal_inputs(
         component,
         package_id,
         tool_inputs,
-        tool_input_manifests,
         cabal,
         setup,
         setup_deps,
@@ -405,7 +405,6 @@ def _prepare_cabal_inputs(
             tool_inputs,
         ],
     )
-    input_manifests = tool_input_manifests + hs.toolchain.cc_wrapper.manifests
 
     runfiles_direct = runfiles_libs if static_binary else dynamic_libs
 
@@ -413,7 +412,6 @@ def _prepare_cabal_inputs(
         cabal_wrapper = cabal_wrapper,
         args = args,
         inputs = inputs,
-        input_manifests = input_manifests,
         env = env,
         runfiles = depset(direct = runfiles_direct),
     )
@@ -575,7 +573,10 @@ def _haskell_cabal_library_impl(ctx):
                 ),
                 sibling = cabal,
             )
-    (tool_inputs, tool_input_manifests) = ctx.resolve_tools(tools = ctx.attr.tools)
+    tool_inputs = depset(transitive = [
+        t[DefaultInfo].default_runfiles.files
+        for t in ctx.attr.tools
+    ])
     c = _prepare_cabal_inputs(
         hs,
         cc,
@@ -587,7 +588,6 @@ def _haskell_cabal_library_impl(ctx):
         component = "lib:{}".format(ctx.attr.sublibrary_name or ctx.attr.package_name or hs.label.name),
         package_id = package_id,
         tool_inputs = tool_inputs,
-        tool_input_manifests = tool_input_manifests,
         cabal = cabal,
         setup = setup,
         setup_deps = setup_deps,
@@ -620,15 +620,13 @@ def _haskell_cabal_library_impl(ctx):
     if with_profiling:
         outputs.append(profiling_library)
 
-    (_, runghc_manifest) = ctx.resolve_tools(tools = [ctx.attr._runghc])
     json_args = ctx.actions.declare_file("{}_cabal_wrapper_args.json".format(ctx.label.name))
     ctx.actions.write(json_args, json.encode(c.args))
     ctx.actions.run(
         executable = c.cabal_wrapper,
         arguments = [json_args.path],
         inputs = depset([json_args], transitive = [c.inputs]),
-        input_manifests = c.input_manifests + runghc_manifest,
-        tools = [c.cabal_wrapper, ctx.executable._runghc] + hs.tools_config.tools_for_ghc,
+        tools = [c.cabal_wrapper, ctx.executable._runghc] + hs.tools_config.tools_for_ghc + ctx.attr.tools,
         outputs = outputs,
         env = c.env,
         mnemonic = "HaskellCabalLibrary",
@@ -911,7 +909,10 @@ def _haskell_cabal_binary_impl(ctx):
         "_install/{}_data".format(hs.label.name),
         sibling = cabal,
     )
-    (tool_inputs, tool_input_manifests) = ctx.resolve_tools(tools = ctx.attr.tools)
+    tool_inputs = depset(transitive = [
+        t[DefaultInfo].default_runfiles.files
+        for t in ctx.attr.tools
+    ])
     c = _prepare_cabal_inputs(
         hs,
         cc,
@@ -923,7 +924,6 @@ def _haskell_cabal_binary_impl(ctx):
         component = "exe:{}".format(exe_name),
         package_id = hs.label.name,
         tool_inputs = tool_inputs,
-        tool_input_manifests = tool_input_manifests,
         cabal = cabal,
         setup = setup,
         setup_deps = setup_deps,
@@ -942,20 +942,18 @@ def _haskell_cabal_binary_impl(ctx):
         static_binary = static_binary,
         label = ctx.label,
     )
-    (_, runghc_manifest) = ctx.resolve_tools(tools = [ctx.attr._runghc])
     json_args = ctx.actions.declare_file("{}_cabal_wrapper_args.json".format(ctx.label.name))
     ctx.actions.write(json_args, json.encode(c.args))
     ctx.actions.run(
         executable = c.cabal_wrapper,
         arguments = [json_args.path],
         inputs = depset([json_args], transitive = [c.inputs]),
-        input_manifests = c.input_manifests + runghc_manifest,
         outputs = [
             package_database,
             binary,
             data_dir,
         ],
-        tools = [c.cabal_wrapper, ctx.executable._runghc] + hs.tools_config.tools_for_ghc,
+        tools = [c.cabal_wrapper, ctx.executable._runghc] + hs.tools_config.tools_for_ghc + ctx.attr.tools,
         env = c.env,
         mnemonic = "HaskellCabalBinary",
         progress_message = "HaskellCabalBinary {}".format(hs.label),
@@ -1696,11 +1694,7 @@ def _is_bzlmod_enabled():
     return str(Label("@rules_haskell//:BUILD.bazel")).startswith("@@")
 
 def _label_to_string(label):
-    if check_bazel_version("6.0.0")[0]:
-        # `str` serializes the label to its canonical name starting from bazel 6
-        return str(label)
-    else:
-        return "@{}//{}:{}".format(label.workspace_name, label.package, label.name)
+    return str(label)
 
 def _parse_stack_snapshot(repository_ctx, snapshot, local_snapshot):
     if snapshot and local_snapshot:

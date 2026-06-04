@@ -10,6 +10,9 @@ load(
     "C_COMPILE_ACTION_NAME",
 )
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load(
     "//haskell:providers.bzl",
     "HaskellInfo",
@@ -120,7 +123,7 @@ def cc_interop_info(ctx, override_cc_toolchain = None):
     cc_wrapper = hs_toolchain.cc_wrapper
     cc = cc_wrapper.executable.path
     cc_files = depset(transitive = [cc_toolchain.all_files, cc_wrapper.inputs])
-    cc_manifests = cc_wrapper.manifests
+    cc_manifests = []
 
     tools = {
         "ar": cc_toolchain.ar_executable,

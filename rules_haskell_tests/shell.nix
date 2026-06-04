@@ -33,7 +33,7 @@ mkShell {
     file
   ] ++ lib.optionals docTools [ graphviz python3Packages.sphinx zip unzip ];
 
-  packages = [ bazel_6 ];
+  packages = [ bazel_6 bazel_9 ];
 
   shellHook = ''
     # Add nix config flags to .bazelrc.local.

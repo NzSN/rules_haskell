@@ -3,6 +3,7 @@ matrix:
   bazel:
   - 6.x
   - 7.x
+  - 9.x
   workdir: [".", "rules_haskell_tests"]
 
 tasks:
@@ -15,13 +16,6 @@ tasks:
       LANG: "C.UTF-8"
     shell_commands:
       - "sudo apt -y update && sudo apt -y install libgmp-dev"
-      # TODO(cb) remove once fully migrated to bzlmod
-      - |
-        echo ${USE_BAZEL_VERSION}
-        if [ $(echo ${USE_BAZEL_VERSION} | cut -d. -f1) != 6 ]; then
-          echo '(enabling workspace mode)' >&2
-          echo 'common --enable_workspace' > .bazelrc.local
-        fi
     build_flags:
       - "--config=ci-common"
       - "--config=linux-bindist"

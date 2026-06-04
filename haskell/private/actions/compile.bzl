@@ -52,7 +52,7 @@ def _compilation_defaults(
         args: default argument list
         compile_flags: arguments that were used to compile the package
         inputs: default inputs
-        input_manifests: input manifests
+        tools: extra tools required by the action
         outputs: default outputs
         object_files: object files
         dyn_object_files: dynamic object files (*.dyn_o)
@@ -264,11 +264,10 @@ def _compilation_defaults(
         for opt in plugin.args:
             args.add_all(["-fplugin-opt", "{}:{}".format(plugin.module, opt)])
 
-    plugin_tool_inputs = depset(transitive = [plugin.tool_inputs for plugin in all_plugins])
-    plugin_tool_input_manifests = [
-        manifest
+    plugin_tools = [
+        tool
         for plugin in all_plugins
-        for manifest in plugin.tool_input_manifests
+        for tool in plugin.tools
     ]
 
     # Pass source files
@@ -314,9 +313,8 @@ def _compilation_defaults(
             depset(get_ghci_library_files(hs, cc.cc_libraries_info, cc.transitive_libraries + cc.plugin_libraries)),
             java.inputs,
             preprocessors.inputs,
-            plugin_tool_inputs,
         ]),
-        input_manifests = preprocessors.input_manifests + plugin_tool_input_manifests,
+        tools = plugin_tools + preprocessors.tools,
         object_files = object_files,
         dyn_object_files = dyn_object_files,
         interface_files = interface_files,
@@ -418,7 +416,7 @@ def compile_binary(
             hs,
             cc,
             inputs = c.inputs,
-            input_manifests = c.input_manifests,
+            extra_tools = c.tools,
             outputs = c.outputs + [datum.mix_file for datum in coverage_data],
             mnemonic = "HaskellBuildBinary" + ("Prof" if with_profiling else ""),
             progress_message = "HaskellBuildBinary {}".format(hs.label),
@@ -515,7 +513,7 @@ def compile_library(
             hs,
             cc,
             inputs = c.inputs,
-            input_manifests = c.input_manifests,
+            extra_tools = c.tools,
             outputs = c.outputs + [datum.mix_file for datum in coverage_data],
             mnemonic = "HaskellBuildLibrary" + ("Prof" if with_profiling else ""),
             progress_message = "HaskellBuildLibrary {}".format(hs.label),

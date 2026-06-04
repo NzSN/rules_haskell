@@ -1,6 +1,7 @@
 """Defines output groups that are consumed by tools such as 'hrepl'."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 load(":private/cc_libraries.bzl", "get_ghci_library_files")
 
 def write_proto_file(hs, output_name, proto_type, content):
@@ -32,8 +33,7 @@ def write_proto_file(hs, output_name, proto_type, content):
 
     hs.actions.run_shell(
         outputs = [proto_pb],
-        inputs = depset([proto_txt] + rule_info_protos, transitive = [protoc.inputs]),
-        input_manifests = protoc.input_manifests,
+        inputs = depset([proto_txt] + rule_info_protos),
         tools = [protoc.executable],
         command =
             "{protoc} {rule_info_proto} --encode {proto_type} < {proto_txt} > {proto_pb}"

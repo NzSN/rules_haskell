@@ -2,6 +2,9 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "use_cc_toolchain")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load("@rules_proto//proto:defs.bzl", "ProtoInfo")
 load(
     ":private/cc_libraries.bzl",
     "deps_HaskellCcLibrariesInfo",
@@ -147,13 +150,12 @@ def _haskell_proto_aspect_impl(target, ctx):
     ])
 
     ctx.actions.run(
-        inputs = depset(inputs, transitive = [pb.plugin.inputs, pb.protoc.inputs]),
-        input_manifests = pb.protoc.input_manifests + pb.plugin.input_manifests,
+        inputs = depset(inputs),
         outputs = hs_files,
         mnemonic = "HaskellProtoc",
         executable = pb.protoc.executable,
         arguments = [args],
-        tools = [pb.plugin.executable],
+        tools = [pb.plugin.executable, pb.protoc.executable],
         env = {
             "RULES_HASKELL_GHC_PATH": hs.tools.ghc.path,
             "RULES_HASKELL_GHC_PKG_PATH": hs.tools.ghc_pkg.path,
@@ -352,11 +354,8 @@ registered.
 )
 
 def _wrap_tool(ctx, exe, tool):
-    inputs, input_manifests = ctx.resolve_tools(tools = [tool])
     return struct(
         executable = exe,
-        inputs = inputs,
-        input_manifests = input_manifests,
     )
 
 def _protobuf_toolchain_impl(ctx):

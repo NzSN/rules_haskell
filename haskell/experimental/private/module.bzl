@@ -174,7 +174,7 @@ def _build_haskell_module(
         [dep for plugin in plugin_decl for dep in plugin[GhcPluginInfo].deps],
     )
     plugins = [resolve_plugin_tools(ctx, plugin[GhcPluginInfo]) for plugin in plugin_decl]
-    (preprocessors_inputs, preprocessors_input_manifests) = ctx.resolve_tools(tools = ctx.attr.tools + module_attr.tools)
+    preprocessors = ctx.attr.tools + module_attr.tools
 
     # TODO[AH] Support additional outputs such as `.hie`.
 
@@ -293,11 +293,10 @@ def _build_haskell_module(
         for opt in plugin.args:
             args.add_all(["-fplugin-opt", "{}:{}".format(plugin.module, opt)])
 
-    plugin_tool_inputs = depset(transitive = [plugin.tool_inputs for plugin in plugins])
-    plugin_tool_input_manifests = [
-        manifest
+    plugin_tools = [
+        tool
         for plugin in plugins
-        for manifest in plugin.tool_input_manifests
+        for tool in plugin.tools
     ]
 
     args.add_all(hs.toolchain.ghcopts)
@@ -345,8 +344,6 @@ def _build_haskell_module(
                 plugin_dep_info.package_databases,
                 plugin_dep_info.interface_dirs,
                 plugin_dep_info.hs_libraries,
-                plugin_tool_inputs,
-                preprocessors_inputs,
                 interface_inputs,
                 abi_inputs,
             ] + [
@@ -357,11 +354,10 @@ def _build_haskell_module(
                     narrowed_deps_info.deps_hs_libraries,
                     object_inputs,
                 ]
-                # libraries and object inputs are only needed if the module uses TH
                 if enable_th
             ],
         ),
-        input_manifests = preprocessors_input_manifests + plugin_tool_input_manifests,
+        extra_tools = plugin_tools + preprocessors,
         outputs = outputs,
         mnemonic = "HaskellBuildObject" + ("Prof" if with_profiling else ""),
         progress_message = "HaskellBuildObject {} {}".format(hs.label, module.label),

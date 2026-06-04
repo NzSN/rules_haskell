@@ -1,6 +1,7 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_python//python:defs.bzl", "py_binary")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
@@ -67,6 +68,7 @@ def _cc_wrapper_impl(ctx):
     )
     return [DefaultInfo(
         files = depset([cc_wrapper]),
+        executable = cc_wrapper,
         runfiles = ctx.runfiles(
             transitive_files = cc_toolchain.all_files,
             collect_data = True,
@@ -88,6 +90,7 @@ _cc_wrapper = rule(
             default = Label("@rules_cc//cc:current_cc_toolchain"),
         ),
     },
+    executable = True,
     fragments = ["cpp"],
     toolchains = use_cc_toolchain(),
 )
@@ -138,7 +141,7 @@ def cc_wrapper(name, **kwargs):
         name = name,
         actual = select({
             "@rules_haskell//haskell/platforms:mingw32": name + "-bash",
-            "//conditions:default": name + "-python",
+            "//conditions:default": name + ".py",
         }),
         **kwargs
     )

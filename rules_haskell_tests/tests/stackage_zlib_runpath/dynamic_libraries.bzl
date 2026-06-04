@@ -1,3 +1,5 @@
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+
 def _dynamic_libraries_impl(ctx):
     outputs = []
     solib_names = []

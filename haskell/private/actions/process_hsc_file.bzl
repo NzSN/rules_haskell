@@ -68,7 +68,6 @@ def process_hsc_file(hs, cc, hsc_flags, hsc_inputs, hsc_file):
             depset(hsc_inputs),
             depset(hs.toolchain.bindir),
         ]),
-        input_manifests = cc.manifests,
         outputs = [hs_out],
         mnemonic = "HaskellHsc2hs",
         command =
