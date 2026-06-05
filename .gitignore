@@ -10,3 +10,4 @@ __pycache__
 /.envrc
 tests/recompilation/logfile.json
 /.agent-shell/
+MODULE.bazel.lock
